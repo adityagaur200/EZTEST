@@ -1,0 +1,91 @@
+
+Question 2: How do you Plan on deploying this to the production environment?
+Answer:-
+To deploy this to the production environment:
+-> First choose the cloud service provider to host the application(like aws,google cloud).
+-> Configure the Django application for deploying by arranging and using .env variables.
+-> Use Nginx for web Server and Configure all static and media files.
+-> Move the file storage to S3 or any storage and setup Database.
+-> Use of Docker to containerize the application.
+
+
+
+Question 1: Write Test cases for the above .
+Answer:- 
+class EZTestTestCase(TestCase):
+    def setUp(self):
+        # Set up test users
+        self.client = Client()
+        self.ops_user = User.objects.create_user(username='opsuser', password='test123', email='ops@example.com')
+        self.client_user = User.objects.create_user(username='clientuser', password='test123', email='client@example.com')
+
+        UserProfile.objects.create(user=self.ops_user, role='ops')
+        UserProfile.objects.create(user=self.client_user, role='client')
+
+    def test_register_user(self):
+        response = self.client.post('/register/', data={
+            "username": "newuser",
+            "password": "newpass",
+            "email": "new@example.com",
+            "role": "client"
+        }, content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("User created successfully", response.json()["message"])
+
+    def test_login_user(self):
+        response = self.client.post('/login/', data={
+            "username": "clientuser",
+            "password": "test123"
+        }, content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["role"], "client")
+
+    def test_logout_user(self):
+        self.client.login(username="clientuser", password="test123")
+        response = self.client.post('/logout/', content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("logout", response.json()["message"])
+
+    def test_upload_file_as_ops(self):
+        self.client.login(username="opsuser", password="test123")
+        test_file = SimpleUploadedFile("test.pptx", b"file_content", content_type='application/vnd.openxmlformats-officedocument.presentationml.presentation')
+
+        response = self.client.post('/upload/', {'file': test_file})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("uploaded", response.json()["message"])
+        self.assertEqual(FileModel.objects.count(), 1)
+
+    def test_upload_file_invalid_type(self):
+        self.client.login(username="opsuser", password="test123")
+        test_file = SimpleUploadedFile("test.exe", b"fake", content_type='application/octet-stream')
+        response = self.client.post('/upload/', {'file': test_file})
+        self.assertEqual(response.status_code, 400)
+
+    def test_show_files_as_client(self):
+        # Upload file first as ops
+        self.client.login(username="opsuser", password="test123")
+        test_file = SimpleUploadedFile("test.docx", b"abc", content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        self.client.post('/upload/', {'file': test_file})
+
+        self.client.logout()
+
+        # Now login as client
+        self.client.login(username="clientuser", password="test123")
+        response = self.client.get('/show/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("files", response.json())
+
+    def test_download_file_as_client(self):
+        # Upload file
+        self.client.login(username="opsuser", password="test123")
+        test_file = SimpleUploadedFile("test.xlsx", b"abc", content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.client.post('/upload/', {'file': test_file})
+        file_id = FileModel.objects.first().id
+        self.client.logout()
+
+        # Download as client
+        self.client.login(username="clientuser", password="test123")
+        response = self.client.get(f'/download/{file_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("download-link", response.json())
+
